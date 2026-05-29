@@ -1,0 +1,42 @@
+services:
+  # 1. The Main Brain API
+  brain:
+    build:
+      context: ../ # Points to the root Insta_posts folder
+      dockerfile: infrastructure/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../:/app # This maps your local code for AUTO-UPDATING
+      - /app/.venv
+    env_file:
+      - ../shared/.env
+    # The --reload flag watches the mapped volume for changes
+    command: uv run uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - weather-mcp
+      - news-mcp
+
+  # 2. The Weather Server
+  weather-mcp:
+    build:
+      context: ../
+      dockerfile: infrastructure/Dockerfile.mcp
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../:/app
+      - /app/.venv
+    command: uv run python mcp_servers/weather_mcp/weather_server.py
+
+  # 3. The News Server
+  news-mcp:
+    build:
+      context: ../
+      dockerfile: infrastructure/Dockerfile.mcp
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../:/app
+      - /app/.venv
+    command: uv run python mcp_servers/news_mcp/news_server.py

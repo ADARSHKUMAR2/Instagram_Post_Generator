@@ -6,18 +6,32 @@ from openai import AsyncOpenAI
 
 load_dotenv()
 
+# IS_DOCKER = os.getenv("RUNNING_IN_DOCKER", "false").lower() == "true"
+
+# Dynamically set the routing names based on the environment
+BASE_WEATHER_URL = "weather-mcp" 
+BASE_NEWS_URL = "news-mcp" 
+BASE_SPORTS_URL = "sports-mcp" 
+
 class MCPServerName(str, Enum):
     WEATHER = "weather"
     NEWS = "news"
-    SPORTS = "sports"
+    # SPORTS = "sports"
     FACTS="facts"
     PUBLISH = "publish"
 
 class Config:
     MCP_SERVERS = {
-        MCPServerName.WEATHER: {"url": "http://localhost:8001/sse"},
-        MCPServerName.NEWS: {"url": "http://localhost:8002/sse"},
-        MCPServerName.SPORTS: {"url": "http://localhost:8003/sse"}
+        MCPServerName.WEATHER: {
+            "url": f"http://{BASE_WEATHER_URL}:8001/sse",
+        },
+        MCPServerName.NEWS: {
+            "url": f"http://{BASE_NEWS_URL}:8002/sse",
+        },
+        # MCPServerName.SPORTS: {
+        #     "url": f"http://{BASE_SPORTS_URL}:8003/sse",
+        #     "headers": {"Host": "localhost"}  # Bypass FastMCP SSRF block
+        # }
     }
 
     github_token = os.getenv("GITHUB_TOKEN")

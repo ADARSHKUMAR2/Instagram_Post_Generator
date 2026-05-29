@@ -1,0 +1,11 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen
+
+COPY . .
+
+# Expose ports 8001-8005 for various MCP servers
+EXPOSE 8001 8002 8003

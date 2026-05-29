@@ -29,7 +29,7 @@ async def generate_instagram_post(category_request: str):
         return result.final_output
 
 if __name__ == "__main__":
-    test_input = "Create a weather update post for Meerut today."
+    test_input = "Create a news update for uefa champions league"
     final_post = asyncio.run(generate_instagram_post(test_input))
     print("\n--- Final Agent Output ---")
     print(final_post)

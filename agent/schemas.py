@@ -14,3 +14,7 @@ class PostResponse(BaseModel):
     status: str
     content: InstaPost
     image_url: str | None = None
+
+class PublishRequest(BaseModel):
+    image_url: str
+    caption: str

@@ -39,6 +39,9 @@ class Config:
 
     MODEL = "gpt-4o-mini"
 
+    IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID")
+    ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN")
+    
     github_client = AsyncOpenAI(
     base_url="https://models.inference.ai.azure.com",
     api_key=github_token)
@@ -49,3 +52,5 @@ class Config:
     )
      
     image_model = "black-forest-labs/flux-2-pro"
+
+    

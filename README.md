@@ -1,37 +1,36 @@
 # Insta Posts (InstaAgent)
 
-AI-powered Instagram post generator with a Streamlit UI. An OpenAI Agents workflow connects to MCP (Model Context Protocol) servers for live weather and news, produces a structured caption and image prompt, and returns a Pollinations.ai image URL for a 1024×1024 preview.
+AI-powered Instagram post generator with a Streamlit UI. An OpenAI Agents workflow pulls live weather and news via MCP servers, drafts a caption and image prompt, generates a preview image through Pollinations.ai, and can publish directly to Instagram through the Meta Graph API.
 
 ## Architecture
 
 ```
-┌──────────────────┐   POST /api/generate-post    ┌──────────────────┐
-│  Streamlit UI    │ ───────────────────────────► │  FastAPI Backend │
-│  frontend        │         (brain)              │  backend/api.py  │
-│  :8501           │                              └────────┬─────────┘
-└──────────────────┘                                       │
-                                                           ▼
-                                                  ┌──────────────────┐
-                                                  │  InstaCreator    │
-                                                  │  Agent (Runner)  │
-                                                  │  agent_handler   │
-                                                  └────────┬─────────┘
-                                     ┌────────────────────┼────────────────────┐
-                                     ▼                    ▼                    │
-                            ┌────────────────┐   ┌────────────────┐            │
-                            │ weather-mcp    │   │ news-mcp       │            │
-                            │ :8001 /sse     │   │ :8002 /sse     │            │
-                            │ fetch_weather  │   │ fetch_news     │            │
-                            └────────────────┘   └────────────────┘            │
-                                                                               │
-                            GitHub Models API (gpt-4o-mini) ◄──────────────────┘
-                            Pollinations.ai (FLUX) for image URL ◄── backend
+┌──────────────────┐  POST /api/generate-post   ┌──────────────────┐
+│  Streamlit UI    │ ─────────────────────────► │  FastAPI Backend │
+│  :8501           │  POST /api/publish-post    │  (brain) :8000   │
+└──────────────────┘                            └────────┬─────────┘
+                                                         │
+                         ┌───────────────────────────────┼───────────────────────────────┐
+                         ▼                               ▼                               ▼
+                ┌─────────────────┐            ┌─────────────────┐            ┌─────────────────┐
+                │ InstaCreator    │            │ Pollinations.ai │            │ Meta Graph API  │
+                │ Agent + MCPs    │            │ (FLUX preview)  │            │ (publish feed)  │
+                └────────┬────────┘            └─────────────────┘            └─────────────────┘
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+   ┌─────────────────┐       ┌─────────────────┐
+   │ weather-mcp     │       │ news-mcp        │
+   │ :8001 /sse      │       │ :8002 /sse      │
+   └─────────────────┘       └─────────────────┘
+            │                         │
+            └──────── GitHub Models API (gpt-4o-mini) ────────┘
 ```
 
 | Service | Port | Role |
 |---------|------|------|
-| **frontend** | 8501 | Streamlit app — prompt input, caption, image preview |
-| **brain** | 8000 | FastAPI API — agent orchestration + image URL |
+| **frontend** | 8501 | Streamlit — prompt, preview caption/image, publish button |
+| **brain** | 8000 | FastAPI — agent orchestration, image URL, Instagram publish |
 | **weather-mcp** | 8001 | MCP tool: weather by city |
 | **news-mcp** | 8002 | MCP tool: headlines via Google News RSS |
 
@@ -40,17 +39,30 @@ AI-powered Instagram post generator with a Streamlit UI. An OpenAI Agents workfl
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/) (local development)
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose (recommended)
 - [GitHub personal access token](https://github.com/settings/tokens) with **GitHub Models** access
+- **Instagram publishing (optional):** Meta Developer app, Instagram Business/Creator account linked to a Facebook Page, and a long-lived access token with `instagram_content_publish` permission
 
 ## Environment variables
 
 Create `shared/.env` (loaded by Docker Compose and `python-dotenv`):
 
 ```env
+# LLM (required for generation)
 GITHUB_TOKEN=ghp_your_github_models_token
 OPENAI_API_KEY=sk_optional_if_you_switch_providers
+
+# Instagram publish (optional — required only for /api/publish-post)
+IG_ACCOUNT_ID=your_instagram_business_account_id
+IG_ACCESS_TOKEN=your_meta_graph_api_access_token
 ```
 
-The agent uses `GITHUB_TOKEN` against `https://models.inference.ai.azure.com` with `gpt-4o-mini`. Adjust model and client settings in `shared/config.py`.
+| Variable | Used for |
+|----------|----------|
+| `GITHUB_TOKEN` | GitHub Models inference (`gpt-4o-mini`) |
+| `OPENAI_API_KEY` | Reserved if you switch providers in `shared/config.py` |
+| `IG_ACCOUNT_ID` | Instagram Business account ID for Graph API |
+| `IG_ACCESS_TOKEN` | Meta access token with publish permissions |
+
+Generation works without Instagram credentials. Publishing returns `500` if `IG_ACCOUNT_ID` or `IG_ACCESS_TOKEN` is missing.
 
 ## Run with Docker (recommended)
 
@@ -58,6 +70,12 @@ From the project root:
 
 ```bash
 docker compose -f infrastructure/docker-compose.yml up --build
+```
+
+Or from `infrastructure/`:
+
+```bash
+cd infrastructure && docker compose up --build
 ```
 
 | URL | Description |
@@ -68,7 +86,7 @@ docker compose -f infrastructure/docker-compose.yml up --build
 | http://localhost:8001/status | Weather MCP health |
 | http://localhost:8002/status | News MCP health |
 
-The UI calls `http://brain:8000/api/generate-post` inside the Compose network. MCP URLs in `shared/config.py` use Docker service hostnames (`weather-mcp`, `news-mcp`).
+Inside Compose, the UI calls `http://brain:8000`. MCP URLs in `shared/config.py` use Docker service hostnames (`weather-mcp`, `news-mcp`).
 
 Stop the stack:
 
@@ -111,7 +129,14 @@ uv run uvicorn backend.api:app --reload --host 0.0.0.0 --port 8000
 
 ### 4. Start the Streamlit UI
 
-In `frontend/main_ui.py`, set `API_URL` to `http://localhost:8000/api/generate-post`, then:
+In `frontend/main_ui.py`, set both URLs to localhost:
+
+```python
+API_URL = "http://localhost:8000/api/generate-post"
+PUBLISH_URL = "http://localhost:8000/api/publish-post"
+```
+
+Then:
 
 ```bash
 uv run streamlit run frontend/main_ui.py
@@ -125,9 +150,20 @@ With MCP servers running and `localhost` in config:
 uv run python -m agent.agent_handler
 ```
 
+## Usage flow
+
+1. Enter a prompt in the Streamlit UI (e.g. weather update, news roundup, sports headline).
+2. Click **Generate Post** — the agent fetches MCP data and returns a caption + image prompt.
+3. Review the caption and Pollinations-generated preview image.
+4. Click **Approve & Publish to Instagram** — the backend creates a media container and publishes via the Meta Graph API.
+
+The UI keeps generated content in Streamlit session state so the preview persists until you publish or refresh.
+
 ## API
 
 ### `POST /api/generate-post`
+
+Generates caption, image prompt, and a Pollinations preview URL.
 
 **Request**
 
@@ -158,24 +194,55 @@ curl -X POST http://localhost:8000/api/generate-post \
   -d '{"prompt": "Summarize the latest AI news for an Instagram story."}'
 ```
 
-The agent returns structured `InstaPost` output (`caption`, `image_prompt`). The backend builds a Pollinations.ai FLUX image URL from `image_prompt` (no separate image API key required for previews).
+### `POST /api/publish-post`
+
+Publishes an approved post to the connected Instagram Business account.
+
+**Request**
+
+```json
+{
+  "image_url": "https://image.pollinations.ai/prompt/...",
+  "caption": "Your Instagram caption here."
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "success",
+  "message": "Post published successfully!",
+  "ig_post_id": "178414..."
+}
+```
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8000/api/publish-post \
+  -H "Content-Type: application/json" \
+  -d '{"image_url": "https://example.com/image.jpg", "caption": "Hello from InstaAgent!"}'
+```
+
+Publishing uses Instagram Graph API v19.0 (`/media` → `/media_publish`). The `image_url` must be publicly reachable by Meta's servers.
 
 ## Project structure
 
 ```
 Insta_posts/
 ├── frontend/
-│   ├── main_ui.py              # Streamlit UI
+│   ├── main_ui.py              # Streamlit UI (generate + publish)
 │   └── requirements.txt        # UI-only deps (Docker frontend image)
 ├── backend/
-│   └── api.py                  # FastAPI + image URL generation
+│   └── api.py                  # FastAPI: generate, publish, image URL
 ├── agent/
 │   ├── agent_handler.py        # Agent, MCP clients, Runner
-│   ├── schemas.py              # PostRequest, InstaPost, PostResponse
+│   ├── schemas.py              # PostRequest, InstaPost, PublishRequest, PostResponse
 │   └── prompts/
 │       └── insta_persona.py    # InstaCreator system prompt
 ├── shared/
-│   └── config.py               # MCP URLs, GitHub Models client
+│   └── config.py               # MCP URLs, GitHub Models + Instagram credentials
 ├── mcp_servers/
 │   ├── weather_mcp/            # Weather MCP (8001)
 │   └── news_mcp/               # News MCP (8002)
@@ -199,12 +266,14 @@ Insta_posts/
 
 | Issue | What to check |
 |-------|----------------|
-| UI: “Could not connect to the Brain API” | Run `docker compose ... up`; confirm **brain** is healthy on port 8000. |
+| UI: “Could not connect to the Brain API” | Run `docker compose up`; confirm **brain** is healthy on port 8000. |
 | `ModuleNotFoundError: No module named 'shared'` | Run backend/agent commands from the **project root**; use `python -m agent.agent_handler`. |
 | MCP connection errors locally | Set `BASE_*_URL` to `localhost` and ensure MCP processes are running. |
 | MCP connection errors in Docker | Use Compose as-is; do not use `localhost` in `shared/config.py` inside containers. |
 | `500` on `/api/generate-post` | Verify `GITHUB_TOKEN` in `shared/.env` and that both MCP services are up. |
-| Image slow or fails in UI | Pollinations generates on first request; use the fallback link in the UI if the preview times out. |
+| `Missing Instagram API credentials` | Set `IG_ACCOUNT_ID` and `IG_ACCESS_TOKEN` in `shared/.env`. |
+| Publish fails at container creation | Ensure `image_url` is public HTTPS; Meta must fetch the image server-side. |
+| Image slow or fails in UI | Pollinations generates on first request; use the direct link fallback in the UI. |
 
 ## Roadmap
 

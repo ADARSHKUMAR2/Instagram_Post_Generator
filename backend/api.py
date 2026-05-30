@@ -3,6 +3,9 @@ import uvicorn
 import traceback
 from agent.schemas import PostRequest, PostResponse, InstaPost
 from agent.agent_handler import generate_instagram_post
+import replicate
+from shared.config import Config
+import urllib.parse
 
 app = FastAPI(
     title="InstaAgent Backend",
@@ -28,14 +31,34 @@ async def api_generate_post(request: PostRequest):
     try:
         # Pass the validated request string to your agent handler
         final_content = await generate_instagram_post(request.prompt)
+        insta_post = InstaPost(**final_content)
         
+        # 2. Call DALL-E 3 with the generated prompt
+        image_url = None
+        # 2. Generate the Free Pollinations Image URL
+        print("🎨 Generating free image URL via Pollinations.ai...")
+        
+        # We must URL-encode the prompt so it's safe to put in a web link
+        clean_prompt = insta_post.image_prompt.replace('\n', ' ').replace('\r', '').strip()
+        
+        # Browsers hate massively long URLs, so we cap the prompt at 800 characters
+        if len(clean_prompt) > 800:
+            clean_prompt = clean_prompt[:800]
+            
+        safe_prompt = urllib.parse.quote(clean_prompt)
+        # Construct the URL (Using the FLUX model for free photorealism)
+        image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&model=flux&nologo=true"
+        
+        print(f"✅ Image URL created: {image_url}")
+
+        # 3. Return the complete package to the frontend
         return PostResponse(
             status="success",
-            content=InstaPost(**final_content)
+            content=insta_post,
+            image_url=image_url 
         )
         
     except Exception as e:
-        # If an MCP server is down or OpenAI fails, return a 500 error cleanly
         print("--- FULL TRACEBACK START ---")
         traceback.print_exc()
         print("--- FULL TRACEBACK END ---")

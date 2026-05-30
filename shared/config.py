@@ -47,3 +47,5 @@ class Config:
         model=MODEL,
         openai_client=github_client
     )
+     
+    image_model = "black-forest-labs/flux-2-pro"

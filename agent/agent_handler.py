@@ -2,10 +2,11 @@ import asyncio
 from pathlib import Path
 from agents import Agent, Runner
 from agents.mcp import MCPServerSse
+from agent.schemas import InstaPost
 from shared.config import Config, MCPServerName
 from agent.prompts.insta_persona import Prompts
 
-async def generate_instagram_post(category_request: str):
+async def generate_instagram_post(user_input: str):
     
     # Connect to the MCP servers over SSE
     # Using nested context managers for multiple server connections
@@ -16,17 +17,21 @@ async def generate_instagram_post(category_request: str):
             name="InstaCreator",
             instructions=Prompts.INSTA_AGENT_PROMPT,
             mcp_servers=[weather_MCP, news_MCP],
-            model=Config.github_model
+            model=Config.github_model,
+            output_type=InstaPost
         )
         
         # Run the agent with dynamic input from the UI
-        print(f"Triggering workflow for: {category_request}")
-        result = await Runner.run(
-            starting_agent=agent,
-            input=category_request
-        )
-        
-        return result.final_output
+        print(f"Triggering workflow for: {user_input}")
+        try:
+            result = await Runner.run(
+                starting_agent=agent,
+                input=user_input
+            )
+            return result.final_output.model_dump()
+        except Exception as e:
+            print(f"CRITICAL AGENT ERROR: {e}")
+            raise e
 
 if __name__ == "__main__":
     test_input = "Give me a general sports update"

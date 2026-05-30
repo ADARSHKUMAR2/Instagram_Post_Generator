@@ -12,7 +12,7 @@ services:
     env_file:
       - ../shared/.env
     # The --reload flag watches the mapped volume for changes
-    command: uv run uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+    command: uv run uvicorn backend.api:app --host 0.0.0.0 --port 8000 #--reload
     depends_on:
       - weather-mcp
       - news-mcp
@@ -40,3 +40,15 @@ services:
       - ../:/app
       - /app/.venv
     command: uv run python mcp_servers/news_mcp/news_server.py
+
+  frontend:
+      build:
+        context: ../
+        dockerfile: infrastructure/Dockerfile.frontend
+      ports:
+        - "8501:8501"
+      volumes:
+        - ../frontend:/app/frontend
+      command: streamlit run frontend/main_ui.py --server.address 0.0.0.0
+      depends_on:
+        - brain

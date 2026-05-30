@@ -1,11 +1,15 @@
 from pydantic import BaseModel, Field
 
 class PostRequest(BaseModel):
-    category_request: str = Field(
+    prompt: str = Field(
         ..., 
         description="The user's prompt, e.g., 'Create a weather post for Meerut today.'"
     )
 
-class PostResponse(BaseModel):
+class InstaPost(BaseModel):
+    caption: str
+    image_prompt: str
+
+class PostResponse(BaseModel):     
     status: str
-    content: str
+    content: InstaPost

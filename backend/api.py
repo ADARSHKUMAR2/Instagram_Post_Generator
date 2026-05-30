@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 import uvicorn
-
-from agent.schemas import PostRequest, PostResponse
+import traceback
+from agent.schemas import PostRequest, PostResponse, InstaPost
 from agent.agent_handler import generate_instagram_post
 
 app = FastAPI(
@@ -27,17 +27,20 @@ async def api_generate_post(request: PostRequest):
     """
     try:
         # Pass the validated request string to your agent handler
-        final_content = await generate_instagram_post(request.category_request)
+        final_content = await generate_instagram_post(request.prompt)
         
         return PostResponse(
             status="success",
-            content=final_content
+            content=InstaPost(**final_content)
         )
         
     except Exception as e:
         # If an MCP server is down or OpenAI fails, return a 500 error cleanly
+        print("--- FULL TRACEBACK START ---")
+        traceback.print_exc()
+        print("--- FULL TRACEBACK END ---")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 if __name__ == "__main__":
     # Run this backend from the root directory using:
     # python backend/api.py  OR  uvicorn backend.api:app --reload

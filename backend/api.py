@@ -96,6 +96,9 @@ async def api_publish_post(request: PublishRequest):
         if "id" not in publish_data:
             raise Exception(f"Publishing failed: {publish_data}")
             
+        print("🔔 Pinging Discord...")
+        notify_discord(request.caption, request.image_url)
+
         return {"status": "success", "message": "Post published successfully!", "ig_post_id": publish_data["id"]}
 
     except Exception as e:
@@ -148,6 +151,9 @@ async def publish_from_drive(payload: DrivePublishRequest):
         if "id" not in publish_data:
             raise Exception(f"Publishing failed: {publish_data}")
         
+        print("🔔 Pinging Discord...")
+        notify_discord(payload.caption, payload.image_url)
+
         return {
             "status": "success", 
             "message": "Post pulled from Drive, processed via S3, and pushed to Instagram!",
@@ -163,6 +169,29 @@ async def publish_from_drive(payload: DrivePublishRequest):
         storage_manager.purge_temporary_image(local_image_name)
         if os.path.exists(local_path):
             os.remove(local_path)
+
+def notify_discord(caption: str, image_url: str):
+    """Fires a rich embed notification to Discord if a webhook is configured."""
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        print("⚠️ No Discord webhook configured. Skipping notification.")
+        return
+        
+    payload = {
+        "content": "🚀 **New Post Successfully Published to Instagram!**",
+        "embeds": [
+            {
+                "description": f"**Caption:**\n{caption}",
+                "color": 13773097, # Instagram Pink/Purple hex color
+                "image": {"url": image_url}
+            }
+        ]
+    }
+    
+    try:
+        requests.post(webhook_url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"⚠️ Discord Webhook silently failed: {e}")
 
 # Register all routes directly onto the main application instance
 app.include_router(router)

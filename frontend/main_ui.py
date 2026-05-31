@@ -103,3 +103,42 @@ if st.session_state.generated_caption and st.session_state.generated_image_url:
                     st.error(f"Failed to publish: {pub_req.text}")
             except Exception as e:
                 st.error(f"Transmission error: {e}")
+
+st.divider()
+st.subheader("📁 Publish from Google Drive")
+st.markdown("Use a pre-existing image from your shared Google Drive folder.")
+
+# Inputs for the Drive Pipeline
+drive_url = st.text_input("Google Drive File Link (or ID):", placeholder="Paste the share link here...")
+drive_caption = st.text_area("Caption for Drive Image:", placeholder="Write your Instagram caption here...")
+
+if st.button("🚀 Publish Drive Image to Instagram", type="secondary"):
+    if not drive_url or not drive_caption:
+        st.warning("Please provide both a Drive link and a caption.")
+    else:
+        # Extract just the ID from a full Google Drive URL
+        file_id = drive_url
+        if "id=" in drive_url:
+            file_id = drive_url.split("id=")[1].split("&")[0]
+        elif "/d/" in drive_url:
+            file_id = drive_url.split("/d/")[1].split("/")[0]
+
+        with st.spinner("Downloading from Drive, passing to S3, and pushing to Meta..."):
+            try:
+                # Hit your brand new endpoint!
+                response = requests.post(
+                    "http://brain:8000/api/publish-from-drive", 
+                    json={
+                        "drive_file_id": file_id,
+                        "caption": drive_caption
+                    }
+                )
+                
+                if response.status_code == 200:
+                    st.success("🎉 Successfully pulled from Drive and published to Instagram!")
+                    st.balloons()
+                else:
+                    st.error(f"Failed to publish: {response.text}")
+                    
+            except Exception as e:
+                st.error(f"🚨 Connection error: {e}")

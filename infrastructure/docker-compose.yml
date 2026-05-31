@@ -11,6 +11,8 @@ services:
       - /app/.venv
     env_file:
       - ../shared/.env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/infrastructure/google_creds.json
     # The --reload flag watches the mapped volume for changes
     command: uv run uvicorn backend.api:app --host 0.0.0.0 --port 8000 #--reload
     depends_on:

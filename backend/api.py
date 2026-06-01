@@ -54,6 +54,11 @@ async def root_landing():
 @app.on_event("startup")
 async def startup_event():
     start_scheduler()
+    with sqlite3.connect(db_manager.db_path) as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS search_history
+                        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                         query TEXT,
+                         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
 @router.post("/api/queue-post")
 async def queue_post(payload: QueueRequest):
@@ -114,6 +119,10 @@ async def api_generate_post(request: PostRequest):
         # Safely access the Pydantic attribute using dot notation
         search_query = insta_post.image_prompt if insta_post.image_prompt else request.prompt
         
+        with sqlite3.connect(db_manager.db_path) as conn:
+            conn.execute("INSERT INTO search_history (query) VALUES (?)", (search_query,))
+            conn.commit()
+
         # Search the database for the top 3 matches
         drive_matches = vm.search_by_text(query=search_query, n_results=3)
 
@@ -300,6 +309,52 @@ def get_drive_image(file_id: str):
         return StreamingResponse(fh, media_type="image/jpeg")
     except Exception as e:
         return {"error": str(e)}
+
+@router.get("/api/search-history")
+async def get_search_history():
+    """Fetches the 20 most recent semantic searches from the database."""
+    try:
+        with sqlite3.connect(db_manager.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM search_history ORDER BY timestamp DESC LIMIT 20")
+            history = [dict(row) for row in cursor.fetchall()]
+            return {"status": "success", "history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/music-recommendations")
+async def get_music_recommendations(request: PostRequest):
+    """Hits the free Apple iTunes API to find songs matching the vibe without API keys."""
+    try:
+        # 1. Clean the prompt to extract a searchable "vibe" keyword
+        query = request.prompt[:40] 
+        safe_query = urllib.parse.quote(query)
+        
+        # 2. Query the public iTunes API (Zero authentication required!)
+        url = f"https://itunes.apple.com/search?term={safe_query}&entity=song&limit=3"
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        
+        # 3. Format the raw data into our clean UI cards
+        recommendations = []
+        for t in data.get("results", []):
+            # Apple returns 100x100 thumbnails by default. We can seamlessly upscale 
+            # them to crisp 600x600 resolution by slightly altering the image URL.
+            hires_art = t.get("artworkUrl100", "").replace("100x100bb", "600x600bb")
+            
+            recommendations.append({
+                "name": t.get("trackName", "Unknown Track"),
+                "artist": t.get("artistName", "Unknown Artist"),
+                "url": t.get("trackViewUrl", "#"),
+                "image": hires_art
+            })
+            
+        return {"status": "success", "tracks": recommendations}
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 app.include_router(router)
 

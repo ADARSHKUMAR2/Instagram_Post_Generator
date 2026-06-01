@@ -14,6 +14,8 @@ PUBLISH_URL = "http://brain:8000/api/publish-post"
 QUEUE_URL = "http://brain:8000/api/queue-post"
 QUEUE_STATUS_URL = "http://brain:8000/api/queue-status"
 DELETE_QUEUE_URL = "http://brain:8000/api/queue"
+HISTORY_URL = "http://brain:8000/api/search-history"
+DB_STATUS_URL = "http://brain:8000/api/db-status"
 
 # Initialize Session State keys
 if "generated_caption" not in st.session_state:
@@ -66,6 +68,35 @@ if st.button("Generate Post 🚀", type="primary"):
                 st.error(f"🚨 An error occurred: {e}")
 
 st.divider()
+st.subheader("🎵 Soundtrack Your Post")
+st.markdown("Find the perfect Apple Music track to accompany this visual.")
+
+if st.button("Fetch Track Recommendations 🎧", use_container_width=True):
+    search_seed = st.session_state.image_prompt if st.session_state.image_prompt else "trending hits"
+    
+    with st.spinner("Vibe-checking your prompt with the music database..."):
+        try:
+            spot_res = requests.post("http://brain:8000/api/music-recommendations", json={"prompt": search_seed})
+            if spot_res.status_code == 200:
+                data = spot_res.json()
+                if data["status"] == "success":
+                    st.session_state.spotify_tracks = data["tracks"]
+                else:
+                    st.warning(f"Music API Error: {data['message']}")
+        except Exception as e:
+            st.error("Could not reach the music integration.")
+            
+# Render the dynamic Music cards if they exist in memory
+if "spotify_tracks" in st.session_state and st.session_state.spotify_tracks:
+    spot_cols = st.columns(len(st.session_state.spotify_tracks))
+    for idx, track in enumerate(st.session_state.spotify_tracks):
+        with spot_cols[idx]:
+            with st.container(border=True):
+                if track["image"]:
+                    st.image(track["image"], use_column_width=True)
+                st.markdown(f"**{track['name']}**")
+                st.caption(f"👤 {track['artist']}")
+                st.markdown(f"[Listen on Apple Music]({track['url']})")
 
 # --- PERSISTENT RENDERING & PUBLISHING VIEW ---
 if st.session_state.generated_caption:
@@ -278,71 +309,98 @@ with tab2:
                     st.error(f"🚨 Connection error: {e}")
 
 st.divider()
-st.subheader("📊 Background Queue Dashboard")
+st.subheader("🛠️ System Administration Dashboard")
+st.markdown("Monitor background workers, search logs, and database health.")
 
-# Add a refresh button
-col1, col2 = st.columns([4, 1])
-with col2:
-    if st.button("🔄 Refresh Queue"):
-        st.rerun()
+dash_tab1, dash_tab2, dash_tab3 = st.tabs(["📊 Background Queue", "🕰️ Search History", "🧠 ChromaDB Diagnostics"])
 
-try:
-    response = requests.get(QUEUE_STATUS_URL)
-    if response.status_code == 200:
-        queue_data = response.json().get("queue", [])
-        
-        if not queue_data:
-            st.info("The queue is currently empty.")
-        else:
-            for post in queue_data:
-                status_color = "gray"
-                if post['status'] == 'pending': status_color = "orange"
-                if post['status'] == 'processing': status_color = "blue"
-                if post['status'] == 'completed': status_color = "green"
-                if post['status'] == 'failed': status_color = "red"
-                
-                with st.container(border=True):
-                    st.markdown(f"**🗓️ Scheduled:** {post['scheduled_time']} | **Status:** :{status_color}[{post['status'].upper()}]")
-                    st.caption(f"**Source:** {post['source_type'].title()} | **ID/URL:** {post['file_id_or_url'][:30]}...")
-                    st.write(f"💬 {post['caption']}")
-                    
-                    if post['status'] == 'pending':
-                        if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}", use_container_width=True):
-                            del_res = requests.delete(f"{DELETE_QUEUE_URL}/{post['id']}")
-                            if del_res.status_code == 200:
-                                st.success("Post removed from queue!")
-                                st.rerun()
-                                
-    else:
-        st.error("Could not fetch queue status.")
-except Exception as e:
-    st.error(f"Could not connect to the queue database: {e}")
+# --- DASHBOARD TAB 1: QUEUE ---
+with dash_tab1:
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("🔄 Refresh Queue", use_container_width=True):
+            st.rerun()
 
-st.divider()
-st.subheader("🧠 Database Diagnostics")
-st.markdown("Direct line to ChromaDB to verify ingested images.")
-
-DB_STATUS_URL = "http://brain:8000/api/db-status"
-
-if st.button("🔍 Run Database Check"):
-    with st.spinner("Peeking into the vector database..."):
-        try:
-            res = requests.get(DB_STATUS_URL)
-            if res.status_code == 200:
-                data = res.json()
-                
-                if "error" in data:
-                    st.error(f"Database Error: {data['error']}")
-                else:
-                    st.metric(label="Total Vectors Indexed", value=data["count"])
-                    
-                    if data["count"] > 0:
-                        st.success("Database is populated and healthy!")
-                        st.write("**Recent Drive Ingestions:**")
-                        st.json(data["recent"])
-                    else:
-                        st.warning("Database is currently empty.")
+    try:
+        response = requests.get(QUEUE_STATUS_URL)
+        if response.status_code == 200:
+            queue_data = response.json().get("queue", [])
+            
+            if not queue_data:
+                st.info("The queue is currently empty.")
             else:
-                st.error("Failed to reach the diagnostic endpoint.")
-        except Exception as e:
-            st.error(f"🚨 Connection error: {e}")
+                for post in queue_data:
+                    status_color = "gray"
+                    if post['status'] == 'pending': status_color = "orange"
+                    if post['status'] == 'processing': status_color = "blue"
+                    if post['status'] == 'completed': status_color = "green"
+                    if post['status'] == 'failed': status_color = "red"
+                    
+                    with st.container(border=True):
+                        st.markdown(f"**🗓️ Scheduled:** {post['scheduled_time']} | **Status:** :{status_color}[{post['status'].upper()}]")
+                        st.caption(f"**Source:** {post['source_type'].title()} | **ID/URL:** {post['file_id_or_url'][:30]}...")
+                        st.write(f"💬 {post['caption']}")
+                        
+                        if post['status'] == 'pending':
+                            if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}", use_container_width=True):
+                                del_res = requests.delete(f"{DELETE_QUEUE_URL}/{post['id']}")
+                                if del_res.status_code == 200:
+                                    st.success("Post removed from queue!")
+                                    st.rerun()
+        else:
+            st.error("Could not fetch queue status.")
+    except Exception as e:
+        st.error(f"Could not connect to the queue database: {e}")
+
+# --- DASHBOARD TAB 2: SEARCH HISTORY ---
+with dash_tab2:
+    st.caption("A chronological log of all semantic queries sent to your Google Drive vector database.")
+    
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("🔄 Refresh History", use_container_width=True):
+            st.rerun()
+            
+    try:
+        hist_res = requests.get(HISTORY_URL)
+        if hist_res.status_code == 200:
+            history_data = hist_res.json().get("history", [])
+            
+            if not history_data:
+                st.info("No searches have been made yet.")
+            else:
+                for item in history_data:
+                    with st.container(border=True):
+                        st.caption(f"🕒 {item['timestamp']} (UTC)")
+                        st.write(f"🔍 **Query:** {item['query']}")
+        else:
+            st.error("Failed to load history.")
+    except Exception as e:
+        st.error(f"Connection error: {e}")
+
+# --- DASHBOARD TAB 3: DIAGNOSTICS ---
+with dash_tab3:
+    st.caption("Direct line to ChromaDB to verify ingested images and metadata.")
+    
+    if st.button("🔍 Run Database Check", use_container_width=True):
+        with st.spinner("Peeking into the vector database..."):
+            try:
+                res = requests.get(DB_STATUS_URL)
+                if res.status_code == 200:
+                    data = res.json()
+                    
+                    if "error" in data:
+                        st.error(f"Database Error: {data['error']}")
+                    else:
+                        st.metric(label="Total Vectors Indexed", value=data["count"])
+                        
+                        if data["count"] > 0:
+                            st.success("Database is populated and healthy!")
+                            st.write("**Recent Drive Ingestions:**")
+                            st.json(data["recent"])
+                        else:
+                            st.warning("Database is currently empty.")
+                else:
+                    st.error("Failed to reach the diagnostic endpoint.")
+            except Exception as e:
+                st.error(f"🚨 Connection error: {e}")

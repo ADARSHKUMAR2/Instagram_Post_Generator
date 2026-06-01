@@ -107,8 +107,7 @@ async def api_generate_post(request: PostRequest):
             clean_prompt = clean_prompt[:800]
             
         safe_prompt = urllib.parse.quote(clean_prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&model=flux&nologo=true"
-        
+        image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true"
         print(f"✅ Image URL created: {image_url}")
 
         vm = VectorManager()

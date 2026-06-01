@@ -24,6 +24,9 @@ if "image_prompt" not in st.session_state:
     st.session_state.image_prompt = None
 if "drive_matches" not in st.session_state:
     st.session_state.drive_matches = []
+# New memory cache for raw image bytes to prevent re-fetching on rerun
+if "image_cache" not in st.session_state:
+    st.session_state.image_cache = {}
 
 # User Input
 user_prompt = st.text_area(
@@ -42,6 +45,9 @@ if st.button("Generate Post 🚀", type="primary"):
                 if response.status_code == 200:
                     data = response.json()
                     post_content = data.get("content", {})
+
+                    # Clear previous cache on new generation
+                    st.session_state.image_cache = {}
 
                     # Update session state values
                     st.session_state.generated_caption = post_content.get("caption", "No caption found.")
@@ -109,14 +115,22 @@ if st.session_state.generated_caption:
         with st.container(border=is_selected): 
             st.markdown(f"**🤖 AI Concept** {'✅' if is_selected else ''}")
             if ai_url:
-                try:
-                    ai_res = requests.get(ai_url, timeout=15)
-                    if ai_res.status_code == 200:
-                        st.image(ai_res.content, use_column_width=True)
-                    else:
-                        st.error("Failed to load AI image.")
-                except:
-                    st.warning("Network timeout fetching AI image.")
+                # Only attempt to fetch if it hasn't been cached yet
+                if "ai_image" not in st.session_state.image_cache:
+                    try:
+                        ai_res = requests.get(ai_url, timeout=15)
+                        # CRITICAL FIX: Verify the response is an actual image asset, not a text error page!
+                        if ai_res.status_code == 200 and "image" in ai_res.headers.get("Content-Type", "").lower():
+                            st.session_state.image_cache["ai_image"] = ai_res.content
+                    except:
+                        pass
+                
+                # Render the image if valid bytes exist, otherwise show a clean fallback message
+                if "ai_image" in st.session_state.image_cache:
+                    st.image(st.session_state.image_cache["ai_image"], use_column_width=True)
+                else:
+                    st.write("")
+                    st.warning("🤖 AI generation is temporarily congested. Try generating again, or publish using one of your excellent Drive matches!")
             else:
                 st.warning("No AI URL provided.")
                 
@@ -129,15 +143,21 @@ if st.session_state.generated_caption:
                 with st.container(border=is_selected):
                     st.markdown(f"**{option_name}** {'✅' if is_selected else ''}")
                     
-                    secure_url = f"http://brain:8000/api/image/{file_id}"
-                    try:
-                        img_response = requests.get(secure_url, timeout=15)
-                        if img_response.status_code == 200:
-                            st.image(img_response.content, use_column_width=True)
-                        else:
-                            st.error(f"Image load failed ({img_response.status_code})")
-                    except Exception as e:
-                        st.error("Container network error.")
+                    # Read from RAM if already downloaded, otherwise fetch once
+                    cache_key = f"drive_{file_id}"
+                    if cache_key not in st.session_state.image_cache:
+                        secure_url = f"http://brain:8000/api/image/{file_id}"
+                        try:
+                            img_response = requests.get(secure_url, timeout=15)
+                            if img_response.status_code == 200:
+                                st.session_state.image_cache[cache_key] = img_response.content
+                        except:
+                            st.error("Container network error.")
+                    
+                    if cache_key in st.session_state.image_cache:
+                        st.image(st.session_state.image_cache[cache_key], use_column_width=True)
+                    else:
+                        st.error("Image load failed.")
     
     st.divider()
     
@@ -164,8 +184,8 @@ if st.session_state.generated_caption:
                     st.success("🎉 Successfully published to your Instagram feed!")
                     st.balloons()
                     
-                    # Clear state after publish
-                    for key in ['generated_caption', 'generated_image_url', 'image_prompt', 'drive_matches']:
+                    # Clear state and cache after publish
+                    for key in ['generated_caption', 'generated_image_url', 'image_prompt', 'drive_matches', 'image_cache']:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()

@@ -1094,6 +1094,7 @@ backend = [
     { name = "google-api-python-client" },
     { name = "google-auth-httplib2" },
     { name = "kagglehub" },
+    { name = "kagglesdk" },
     { name = "mcp" },
     { name = "pillow" },
     { name = "pydantic" },
@@ -1120,6 +1121,7 @@ backend = [
     { name = "google-api-python-client" },
     { name = "google-auth-httplib2" },
     { name = "kagglehub" },
+    { name = "kagglesdk", specifier = "<0.1.24" },
     { name = "mcp" },
     { name = "pillow", specifier = "==10.3.0" },
     { name = "pydantic", specifier = ">=2.6.0" },
@@ -1281,15 +1283,15 @@ wheels = [
 
 [[package]]
 name = "kagglesdk"
-version = "0.1.27"
+version = "0.1.23"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/c0/857146ba30e777148030ce220c6a1bf0b2aa950b0126d9d542fd1f477384/kagglesdk-0.1.27.tar.gz", hash = "sha256:e377d7a6c189d396fcd80500c5dfff3d7089651a0c9bdfda9fb697ccaecea098", size = 179072, upload-time = "2026-05-29T22:50:31.15Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/7f/80d1910fbb42d59e5845c16affa8496302a3334360e23d70c2adf492b31c/kagglesdk-0.1.23.tar.gz", hash = "sha256:62e89ae21ae29495e7e597d6160f378efcb0c8734a8c10eaf7f7607a60ac1f25", size = 164193, upload-time = "2026-05-01T15:49:16.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/43/bc8f89ff37486c60c4850cd80544e7d64765db734d24cbd6b6bcaba31de7/kagglesdk-0.1.27-py3-none-any.whl", hash = "sha256:5de170a9051d209e90df6f9d9873b55f2a9679d64156f1ac19c4622333812b0f", size = 229188, upload-time = "2026-05-29T22:50:29.778Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/4e/fead499e4e76f66203611ecee1032fc8da87f2ab59c3921c76b06334cbbf/kagglesdk-0.1.23-py3-none-any.whl", hash = "sha256:8966f7d99f59f2b769681e19a2cf52192b23be053de6875c06e66cd85c4f1dd1", size = 217784, upload-time = "2026-05-01T15:49:15.291Z" },
 ]
 
 [[package]]

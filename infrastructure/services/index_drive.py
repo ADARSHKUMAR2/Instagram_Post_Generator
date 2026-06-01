@@ -49,7 +49,7 @@ def run_indexer():
             try:
                 # 3. Download image temporarily from Drive
                 print(f"📥 Downloading from Drive...")
-                drive_manager.download_file(file_id, local_path)
+                drive_manager.download_file_from_drive(file_id, local_path)
                 
                 # 4. Generate embeddings and save to ChromaDB
                 print(f"🧠 Vectorizing with CLIP model...")

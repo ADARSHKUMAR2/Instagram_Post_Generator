@@ -1,8 +1,11 @@
 import os
+import io
 import uvicorn
 import traceback
 import requests
 import urllib.parse
+from googleapiclient.http import MediaIoBaseDownload
+from fastapi.responses import StreamingResponse
 from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 from shared.config import Config
@@ -91,7 +94,7 @@ async def delete_queued_post(post_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/api/generate-post", response_model=PostResponse)
+@router.post("/api/generate-post")
 async def api_generate_post(request: PostRequest):
     try:
         final_content = await generate_instagram_post(request.prompt)
@@ -108,11 +111,20 @@ async def api_generate_post(request: PostRequest):
         
         print(f"✅ Image URL created: {image_url}")
 
-        return PostResponse(
-            status="success",
-            content=insta_post,
-            image_url=image_url 
-        )
+        vm = VectorManager()
+        # Safely access the Pydantic attribute using dot notation
+        search_query = insta_post.image_prompt if insta_post.image_prompt else request.prompt
+        
+        # Search the database for the top 3 matches
+        drive_matches = vm.search_by_text(query=search_query, n_results=3)
+
+        return {
+            "status": "success",
+            "content": insta_post.dict(), # Convert to standard dict for safe JSON transmission
+            "image_url": image_url, 
+            "drive_matches": drive_matches
+        }
+
         
     except Exception as e:
         traceback.print_exc()
@@ -246,7 +258,50 @@ async def search_drive_images(search_data: SearchQuery):
         "results": matching_ids  # List of Google Drive file IDs
     }
     
+@app.get("/api/db-status")
+def get_db_status():
+    """Diagnostic endpoint for Streamlit to peek at ChromaDB."""
+    try:
+        from infrastructure.services.vector_manager import VectorManager
+        vm = VectorManager()
+        collection = vm.collection
+        count = collection.count()
+        
+        if count == 0:
+            return {"count": 0, "recent": []}
+            
+        # Grab the 5 most recent entries
+        results = collection.peek(limit=5)
+        recent = []
+        
+        # Package them up cleanly for the frontend
+        for i in range(len(results['ids'])):
+            recent.append({
+                "id": results['ids'][i],
+                "metadata": results['metadatas'][i]
+            })
+            
+        return {"count": count, "recent": recent}
+    except Exception as e:
+        return {"error": str(e)}
 # Register all routes directly onto the main application instance
+
+@app.get("/api/image/{file_id}")
+def get_drive_image(file_id: str):
+    """Securely fetches an image directly from Google Drive into memory for the UI."""
+    try:
+        drive = GoogleDriveManager()
+        request = drive.service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        return StreamingResponse(fh, media_type="image/jpeg")
+    except Exception as e:
+        return {"error": str(e)}
+
 app.include_router(router)
 
 if __name__ == "__main__":

@@ -83,3 +83,35 @@ class VectorManager:
     def get_stats(self):
         """Returns the total number of images currently indexed."""
         return self.collection.count()
+
+    def search_by_text(self, query: str, n_results: int = 3):
+        """Searches ChromaDB for images that match a text prompt."""
+        try:
+            print(f"🔍 AI is searching Drive vectors for: '{query[:50]}...'")
+            
+            # 1. Safely check exactly how many images we have
+            total_vectors = self.collection.count()
+            if total_vectors == 0:
+                print("⚠️ Database is empty. Skipping search.")
+                return []
+                
+            # 2. Prevent the ChromaDB crash by capping the limit
+            safe_limit = min(n_results, total_vectors)
+            
+            # 3. Convert the text prompt into a mathematical vector
+            text_features = self.model.encode(query)
+            
+            # 4. Ask ChromaDB for the closest matching image vectors
+            results = self.collection.query(
+                query_embeddings=[text_features.tolist()],
+                n_results=safe_limit
+            )
+            
+            matches = results['ids'][0] if results['ids'] else []
+            print(f"✅ Found {len(matches)} matches from Google Drive!")
+            
+            return matches
+            
+        except Exception as e:
+            print(f"🚨 Search error: {e}")
+            return []

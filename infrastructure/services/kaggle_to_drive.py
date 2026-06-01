@@ -5,7 +5,7 @@ from infrastructure.services.google_drive import GoogleDriveManager
 
 # The "Lock File" to ensure we never duplicate datasets
 REGISTRY_FILE = "infrastructure/dataset_registry.json"
-TARGET_DRIVE_FOLDER_ID = "YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE" # Put your folder ID here
+ # Put your folder ID here
 
 def load_registry():
     if os.path.exists(REGISTRY_FILE):
@@ -47,7 +47,7 @@ def ingest_kaggle_dataset(dataset_handle: str):
                 
                 print(f"☁️ Uploading to Drive: {file}...")
                 try:
-                    drive_manager.upload_image(full_path, TARGET_DRIVE_FOLDER_ID)
+                    drive_manager.upload_image(full_path, GoogleDriveManager.TARGET_DRIVE_FOLDER_ID)
                     uploaded_count += 1
                 except Exception as e:
                     print(f"🚨 Failed to upload {file}: {e}")

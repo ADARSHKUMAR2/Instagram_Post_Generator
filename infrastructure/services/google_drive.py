@@ -8,6 +8,8 @@ from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+TARGET_DRIVE_FOLDER_ID = "1MTGCSnQbhPee6sls8K7yxMqzI83ZpkFu"
+
 class GoogleDriveManager:
     def __init__(self):
         self.scopes = ['https://www.googleapis.com/auth/drive.readonly']
@@ -54,3 +56,23 @@ class GoogleDriveManager:
         ).execute()
         
         return uploaded_file.get('id')
+
+    def list_images(self, folder_id: str = TARGET_DRIVE_FOLDER_ID):
+        """Scans a specific Google Drive folder for image files."""
+        try:
+            logger.info(f"🔍 Scanning Drive folder {folder_id} for images...")
+            # Query explicitly for images inside the target folder
+            query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+            
+            results = self.service.files().list(
+                q=query,
+                pageSize=100,
+                fields="nextPageToken, files(id, name, mimeType)"
+            ).execute()
+            
+            items = results.get('files', [])
+            return items
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to list images: {e}")
+            return []

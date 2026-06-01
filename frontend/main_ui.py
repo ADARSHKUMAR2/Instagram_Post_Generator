@@ -11,9 +11,9 @@ st.markdown("Generate data-grounded posts using live News & Weather MCPs.")
 # URL of our Dockerized Brain API
 API_URL = "http://brain:8000/api/generate-post"
 PUBLISH_URL = "http://brain:8000/api/publish-post"
-QUEUE_URL="http://brain:8000/api/queue-post"
-QUEUE_STATUS_URL="http://brain:8000/api/queue-status"
-DELETE_QUEUE_URL="http://brain:8000/api/queue"
+QUEUE_URL = "http://brain:8000/api/queue-post"
+QUEUE_STATUS_URL = "http://brain:8000/api/queue-status"
+DELETE_QUEUE_URL = "http://brain:8000/api/queue"
 
 # Initialize Session State keys
 if "generated_caption" not in st.session_state:
@@ -22,6 +22,8 @@ if "generated_image_url" not in st.session_state:
     st.session_state.generated_image_url = None
 if "image_prompt" not in st.session_state:
     st.session_state.image_prompt = None
+if "drive_matches" not in st.session_state:
+    st.session_state.drive_matches = []
 
 # User Input
 user_prompt = st.text_area(
@@ -45,6 +47,7 @@ if st.button("Generate Post 🚀", type="primary"):
                     st.session_state.generated_caption = post_content.get("caption", "No caption found.")
                     st.session_state.image_prompt = post_content.get("image_prompt", "No image prompt found.")
                     st.session_state.generated_image_url = data.get("image_url")
+                    st.session_state.drive_matches = data.get("drive_matches", [])
                     
                     # Force a clean UI refresh to enter the rendering view
                     st.rerun()
@@ -59,50 +62,113 @@ if st.button("Generate Post 🚀", type="primary"):
 st.divider()
 
 # --- PERSISTENT RENDERING & PUBLISHING VIEW ---
-if st.session_state.generated_caption and st.session_state.generated_image_url:
+if st.session_state.generated_caption:
     
     st.subheader("📝 Instagram Caption")
     st.info(st.session_state.generated_caption)
     
-    st.subheader("🎨 Generated Layout")
-    with st.spinner("🎨 Visualizing post layout..."):
-        try:
-            # Fetch layout bytes to handle external image rendering safely
-            img_response = requests.get(st.session_state.generated_image_url, timeout=30)
-            if img_response.status_code == 200:
-                st.image(img_response.content, use_column_width=True)
-            else:
-                st.image(st.session_state.generated_image_url, use_column_width=True)
-        except Exception as img_err:
-            st.error(f"Could not render image preview: {img_err}")
-            st.markdown(f"**[🔗 Open Image Link Directly]({st.session_state.generated_image_url})**")
-    
     if st.session_state.image_prompt:
-        st.subheader("⚙️ Visual Generation Context")
-        st.caption(st.session_state.image_prompt)
+        st.caption(f"**AI Visual Context:** {st.session_state.image_prompt}")
+    
+    st.divider()
+    st.subheader("🖼️ Image Gallery")
+    st.markdown("Select the final asset to push to your Instagram feed.")
+    
+    ai_url = st.session_state.get("generated_image_url")
+    drive_matches = st.session_state.get("drive_matches", [])
+    
+    # 1. Build the dynamic options list
+    image_options = ["🤖 AI Generated"]
+    for i in range(len(drive_matches)):
+        image_options.append(f"📁 Drive Match {i+1}")
+        
+    # 2. The Selection Tool (Clean horizontal radio button on top)
+    selected_option = st.radio(
+        "Which image should we publish?", 
+        image_options, 
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    
+    st.write("") # Add breathing room
+    
+    # 3. Build a beautiful, responsive visual grid
+    total_options = len(image_options)
+    
+    # Defensive Layout: Center and constrain single AI image if no drive matches exist
+    if total_options == 1:
+        cols = st.columns([1, 2, 1])
+        target_col = cols[1]
+    else:
+        cols = st.columns(total_options)
+        target_col = cols[0]
+    
+    # Render AI Image
+    with target_col:
+        is_selected = selected_option == "🤖 AI Generated"
+        with st.container(border=is_selected): 
+            st.markdown(f"**🤖 AI Concept** {'✅' if is_selected else ''}")
+            if ai_url:
+                try:
+                    ai_res = requests.get(ai_url, timeout=15)
+                    if ai_res.status_code == 200:
+                        st.image(ai_res.content, use_column_width=True)
+                    else:
+                        st.error("Failed to load AI image.")
+                except:
+                    st.warning("Network timeout fetching AI image.")
+            else:
+                st.warning("No AI URL provided.")
+                
+    # Render Drive Matches (Only runs if matches are found)
+    if total_options > 1:
+        for i, file_id in enumerate(drive_matches):
+            option_name = f"📁 Drive Match {i+1}"
+            with cols[i+1]:
+                is_selected = selected_option == option_name
+                with st.container(border=is_selected):
+                    st.markdown(f"**{option_name}** {'✅' if is_selected else ''}")
+                    
+                    secure_url = f"http://brain:8000/api/image/{file_id}"
+                    try:
+                        img_response = requests.get(secure_url, timeout=15)
+                        if img_response.status_code == 200:
+                            st.image(img_response.content, use_column_width=True)
+                        else:
+                            st.error(f"Image load failed ({img_response.status_code})")
+                    except Exception as e:
+                        st.error("Container network error.")
     
     st.divider()
     
     # THE PUBLISH ACTIONS
-    if st.button("📲 Approve & Publish to Instagram", type="primary", use_container_width=True):
-        with st.spinner("Publishing container layout directly to Meta pipelines..."):
+    if st.button("📲 Approve & Publish to Instagram", type="primary", use_container_width=True, key="publish_meta_btn"):
+        
+        is_drive = "Drive Match" in selected_option
+        
+        if is_drive:
+            match_index = int(selected_option.split()[-1]) - 1
+            final_image_target = drive_matches[match_index]
+            publish_endpoint = "http://brain:8000/api/publish-from-drive"
+            payload = {"drive_file_id": final_image_target, "caption": st.session_state.generated_caption}
+        else:
+            final_image_target = ai_url
+            publish_endpoint = PUBLISH_URL
+            payload = {"image_url": final_image_target, "caption": st.session_state.generated_caption}
+
+        with st.spinner(f"Publishing {selected_option} directly to Meta pipelines..."):
             try:
-                pub_req = requests.post(
-                    PUBLISH_URL, 
-                    json={
-                        "image_url": st.session_state.generated_image_url, 
-                        "caption": st.session_state.generated_caption
-                    }
-                )
+                pub_req = requests.post(publish_endpoint, json=payload)
                 
                 if pub_req.status_code == 200:
                     st.success("🎉 Successfully published to your Instagram feed!")
                     st.balloons()
                     
-                    # Clear state after successful publication
-                    st.session_state.generated_caption = None
-                    st.session_state.generated_image_url = None
-                    st.session_state.image_prompt = None
+                    # Clear state after publish
+                    for key in ['generated_caption', 'generated_image_url', 'image_prompt', 'drive_matches']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
                 else:
                     st.error(f"Failed to publish: {pub_req.text}")
             except Exception as e:
@@ -112,11 +178,11 @@ st.divider()
 st.subheader("📁 Publish from Google Drive")
 st.markdown("Fetch an image securely from Drive and push it to Instagram.")
 
-# 1. Standard Inputs (Shared across both tabs)
+# 1. Standard Inputs
 drive_url = st.text_input("Google Drive File Link (or ID):", placeholder="Paste the share link here...")
 drive_caption = st.text_area("Caption for Drive Image:", placeholder="Write your Instagram caption here...")
 
-# Extract ID logic so both buttons can use it
+# Extract ID logic
 file_id = ""
 if drive_url:
     file_id = drive_url
@@ -137,7 +203,6 @@ with tab1:
         else:
             with st.spinner("Pulling from Drive and pushing directly to Meta..."):
                 try:
-                    # Hits your immediate publishing endpoint
                     response = requests.post(
                         "http://brain:8000/api/publish-from-drive", 
                         json={
@@ -172,9 +237,8 @@ with tab2:
 
             with st.spinner("Locking post into the database queue..."):
                 try:
-                    # Hits your queue endpoint
                     response = requests.post(
-                        "http://brain:8000/api/queue-post", 
+                        QUEUE_URL, 
                         json={
                             "source_type": "drive",
                             "file_id_or_url": file_id,
@@ -210,9 +274,7 @@ try:
         if not queue_data:
             st.info("The queue is currently empty.")
         else:
-            # Display each post in a clean card format
             for post in queue_data:
-                # Color code the status
                 status_color = "gray"
                 if post['status'] == 'pending': status_color = "orange"
                 if post['status'] == 'processing': status_color = "blue"
@@ -224,9 +286,8 @@ try:
                     st.caption(f"**Source:** {post['source_type'].title()} | **ID/URL:** {post['file_id_or_url'][:30]}...")
                     st.write(f"💬 {post['caption']}")
                     
-                    # Add a cancel button for pending posts
                     if post['status'] == 'pending':
-                        if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}"):
+                        if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}", use_container_width=True):
                             del_res = requests.delete(f"{DELETE_QUEUE_URL}/{post['id']}")
                             if del_res.status_code == 200:
                                 st.success("Post removed from queue!")
@@ -236,3 +297,32 @@ try:
         st.error("Could not fetch queue status.")
 except Exception as e:
     st.error(f"Could not connect to the queue database: {e}")
+
+st.divider()
+st.subheader("🧠 Database Diagnostics")
+st.markdown("Direct line to ChromaDB to verify ingested images.")
+
+DB_STATUS_URL = "http://brain:8000/api/db-status"
+
+if st.button("🔍 Run Database Check"):
+    with st.spinner("Peeking into the vector database..."):
+        try:
+            res = requests.get(DB_STATUS_URL)
+            if res.status_code == 200:
+                data = res.json()
+                
+                if "error" in data:
+                    st.error(f"Database Error: {data['error']}")
+                else:
+                    st.metric(label="Total Vectors Indexed", value=data["count"])
+                    
+                    if data["count"] > 0:
+                        st.success("Database is populated and healthy!")
+                        st.write("**Recent Drive Ingestions:**")
+                        st.json(data["recent"])
+                    else:
+                        st.warning("Database is currently empty.")
+            else:
+                st.error("Failed to reach the diagnostic endpoint.")
+        except Exception as e:
+            st.error(f"🚨 Connection error: {e}")

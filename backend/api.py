@@ -8,6 +8,10 @@ from pydantic import BaseModel
 from shared.config import Config
 from agent.schemas import PostRequest, PostResponse, InstaPost, PublishRequest
 from agent.agent_handler import generate_instagram_post
+from datetime import datetime
+import sqlite3
+from infrastructure.services.db_manager import DatabaseManager
+from infrastructure.services.scheduler import start_scheduler
 from infrastructure.services.aws_s3 import StorageHandoffManager
 from infrastructure.services.google_drive import GoogleDriveManager
 from infrastructure.services.discord_notifier import DiscordManager
@@ -23,10 +27,17 @@ router = APIRouter()
 storage_manager = StorageHandoffManager()
 drive_manager = GoogleDriveManager()
 discord_manager = DiscordManager()
+db_manager = DatabaseManager()
 
 class DrivePublishRequest(BaseModel):
     drive_file_id: str
     caption: str
+
+class QueueRequest(BaseModel):
+    source_type: str # 'drive' or 'pollinations'
+    file_id_or_url: str
+    caption: str
+    scheduled_time: datetime 
 
 @app.get("/")
 async def root_landing():
@@ -34,6 +45,49 @@ async def root_landing():
         "status": "online",
         "message": "InstaAgent Central Brain is running. Visit /docs for the interactive API explorer."
     }
+
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler()
+
+@router.post("/api/queue-post")
+async def queue_post(payload: QueueRequest):
+    try:
+        post_id = db_manager.add_to_queue(
+            payload.source_type, 
+            payload.file_id_or_url, 
+            payload.caption, 
+            payload.scheduled_time
+        )
+        return {"status": "success", "message": f"Post #{post_id} added to the queue!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/queue-status")
+async def get_queue_status():
+    """Fetches the entire post queue for the Streamlit dashboard."""
+    try:
+        # We need a quick ad-hoc query to get everything, not just 'pending'
+        with sqlite3.connect(db_manager.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM post_queue ORDER BY scheduled_time ASC")
+            posts = [dict(row) for row in cursor.fetchall()]
+            return {"status": "success", "queue": posts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/api/queue/{post_id}")
+async def delete_queued_post(post_id: int):
+    """Allows the user to cancel a scheduled post."""
+    try:
+        with sqlite3.connect(db_manager.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM post_queue WHERE id = ?", (post_id,))
+            conn.commit()
+            return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/generate-post", response_model=PostResponse)
 async def api_generate_post(request: PostRequest):
@@ -155,7 +209,7 @@ async def publish_from_drive(payload: DrivePublishRequest):
         
         print("🔔 Pinging Discord...")
         # --- Clean, 1-line notification trigger ---
-        discord_manager.send_success_notification(payload.caption, payload.image_url)
+        discord_manager.send_success_notification(payload.caption, public_url)
 
         return {
             "status": "success", 

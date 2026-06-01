@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import datetime
 
 # Set page config
 st.set_page_config(page_title="Insta-Post AI", page_icon="📸", layout="centered")
@@ -105,40 +106,98 @@ if st.session_state.generated_caption and st.session_state.generated_image_url:
                 st.error(f"Transmission error: {e}")
 
 st.divider()
-st.subheader("📁 Publish from Google Drive")
-st.markdown("Use a pre-existing image from your shared Google Drive folder.")
+st.subheader("🗓️ Schedule a Drive Post")
+st.markdown("Set a date and time for the background worker to automatically publish your post.")
 
 # Inputs for the Drive Pipeline
 drive_url = st.text_input("Google Drive File Link (or ID):", placeholder="Paste the share link here...")
 drive_caption = st.text_area("Caption for Drive Image:", placeholder="Write your Instagram caption here...")
 
-if st.button("🚀 Publish Drive Image to Instagram", type="secondary"):
+col1, col2 = st.columns(2)
+with col1:
+    # Defaults to today
+    target_date = st.date_input("Select Date")
+with col2:
+    # Defaults to right now
+    target_time = st.time_input("Select Time")
+
+if st.button("⏰ Add to Queue", type="primary"):
     if not drive_url or not drive_caption:
         st.warning("Please provide both a Drive link and a caption.")
     else:
-        # Extract just the ID from a full Google Drive URL
+        # Extract ID from full URL
         file_id = drive_url
         if "id=" in drive_url:
             file_id = drive_url.split("id=")[1].split("&")[0]
         elif "/d/" in drive_url:
             file_id = drive_url.split("/d/")[1].split("/")[0]
 
-        with st.spinner("Downloading from Drive, passing to S3, and pushing to Meta..."):
+        # Combine the Streamlit date and time into a single strict timestamp string for the API
+        scheduled_datetime = datetime.datetime.combine(target_date, target_time)
+
+        with st.spinner("Locking post into the database queue..."):
             try:
-                # Hit your brand new endpoint!
+                # Hit your brand new QUEUE endpoint!
                 response = requests.post(
-                    "http://brain:8000/api/publish-from-drive", 
+                    "http://brain:8000/api/queue-post", 
                     json={
-                        "drive_file_id": file_id,
-                        "caption": drive_caption
+                        "source_type": "drive",
+                        "file_id_or_url": file_id,
+                        "caption": drive_caption,
+                        "scheduled_time": scheduled_datetime.isoformat() # Formats to "YYYY-MM-DDTHH:MM:SS"
                     }
                 )
                 
                 if response.status_code == 200:
-                    st.success("🎉 Successfully pulled from Drive and published to Instagram!")
-                    st.balloons()
+                    data = response.json()
+                    st.success(f"🎉 {data['message']}")
+                    st.info(f"Your background worker will wake up and publish this on {scheduled_datetime.strftime('%b %d at %I:%M %p')}.")
                 else:
-                    st.error(f"Failed to publish: {response.text}")
+                    st.error(f"Failed to queue: {response.text}")
                     
             except Exception as e:
                 st.error(f"🚨 Connection error: {e}")
+
+st.divider()
+st.subheader("📊 Background Queue Dashboard")
+
+# Add a refresh button
+col1, col2 = st.columns([4, 1])
+with col2:
+    if st.button("🔄 Refresh Queue"):
+        st.rerun()
+
+try:
+    response = requests.get("http://brain:8000/api/queue-status")
+    if response.status_code == 200:
+        queue_data = response.json().get("queue", [])
+        
+        if not queue_data:
+            st.info("The queue is currently empty.")
+        else:
+            # Display each post in a clean card format
+            for post in queue_data:
+                # Color code the status
+                status_color = "gray"
+                if post['status'] == 'pending': status_color = "orange"
+                if post['status'] == 'processing': status_color = "blue"
+                if post['status'] == 'completed': status_color = "green"
+                if post['status'] == 'failed': status_color = "red"
+                
+                with st.container(border=True):
+                    st.markdown(f"**🗓️ Scheduled:** {post['scheduled_time']} | **Status:** :{status_color}[{post['status'].upper()}]")
+                    st.caption(f"**Source:** {post['source_type'].title()} | **ID/URL:** {post['file_id_or_url'][:30]}...")
+                    st.write(f"💬 {post['caption']}")
+                    
+                    # Add a cancel button for pending posts
+                    if post['status'] == 'pending':
+                        if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}"):
+                            del_res = requests.delete(f"http://brain:8000/api/queue/{post['id']}")
+                            if del_res.status_code == 200:
+                                st.success("Post removed from queue!")
+                                st.rerun()
+                                
+    else:
+        st.error("Could not fetch queue status.")
+except Exception as e:
+    st.error(f"Could not connect to the queue database: {e}")

@@ -1,11 +1,18 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+ENV UV_PROJECT_ENVIRONMENT=/uv_venv
+
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+
+RUN uv sync --no-dev --group backend
 
 COPY . .
 
-# Expose ports 8001-8005 for various MCP servers
 EXPOSE 8001 8002 8003

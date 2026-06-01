@@ -11,6 +11,9 @@ st.markdown("Generate data-grounded posts using live News & Weather MCPs.")
 # URL of our Dockerized Brain API
 API_URL = "http://brain:8000/api/generate-post"
 PUBLISH_URL = "http://brain:8000/api/publish-post"
+QUEUE_URL="http://brain:8000/api/queue-post"
+QUEUE_STATUS_URL="http://brain:8000/api/queue-status"
+DELETE_QUEUE_URL="http://brain:8000/api/queue"
 
 # Initialize Session State keys
 if "generated_caption" not in st.session_state:
@@ -106,57 +109,89 @@ if st.session_state.generated_caption and st.session_state.generated_image_url:
                 st.error(f"Transmission error: {e}")
 
 st.divider()
-st.subheader("🗓️ Schedule a Drive Post")
-st.markdown("Set a date and time for the background worker to automatically publish your post.")
+st.subheader("📁 Publish from Google Drive")
+st.markdown("Fetch an image securely from Drive and push it to Instagram.")
 
-# Inputs for the Drive Pipeline
+# 1. Standard Inputs (Shared across both tabs)
 drive_url = st.text_input("Google Drive File Link (or ID):", placeholder="Paste the share link here...")
 drive_caption = st.text_area("Caption for Drive Image:", placeholder="Write your Instagram caption here...")
 
-col1, col2 = st.columns(2)
-with col1:
-    # Defaults to today
-    target_date = st.date_input("Select Date")
-with col2:
-    # Defaults to right now
-    target_time = st.time_input("Select Time")
+# Extract ID logic so both buttons can use it
+file_id = ""
+if drive_url:
+    file_id = drive_url
+    if "id=" in drive_url:
+        file_id = drive_url.split("id=")[1].split("&")[0]
+    elif "/d/" in drive_url:
+        file_id = drive_url.split("/d/")[1].split("/")[0]
 
-if st.button("⏰ Add to Queue", type="primary"):
-    if not drive_url or not drive_caption:
-        st.warning("Please provide both a Drive link and a caption.")
-    else:
-        # Extract ID from full URL
-        file_id = drive_url
-        if "id=" in drive_url:
-            file_id = drive_url.split("id=")[1].split("&")[0]
-        elif "/d/" in drive_url:
-            file_id = drive_url.split("/d/")[1].split("/")[0]
+# 2. The Publishing Tabs
+tab1, tab2 = st.tabs(["🚀 Publish Immediately", "⏰ Schedule for Later"])
 
-        # Combine the Streamlit date and time into a single strict timestamp string for the API
-        scheduled_datetime = datetime.datetime.combine(target_date, target_time)
-
-        with st.spinner("Locking post into the database queue..."):
-            try:
-                # Hit your brand new QUEUE endpoint!
-                response = requests.post(
-                    "http://brain:8000/api/queue-post", 
-                    json={
-                        "source_type": "drive",
-                        "file_id_or_url": file_id,
-                        "caption": drive_caption,
-                        "scheduled_time": scheduled_datetime.isoformat() # Formats to "YYYY-MM-DDTHH:MM:SS"
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    st.success(f"🎉 {data['message']}")
-                    st.info(f"Your background worker will wake up and publish this on {scheduled_datetime.strftime('%b %d at %I:%M %p')}.")
-                else:
-                    st.error(f"Failed to queue: {response.text}")
+# --- TAB 1: Publish Now ---
+with tab1:
+    st.caption("This will bypass the database queue and push to Instagram right now.")
+    if st.button("🚀 Publish Now", type="primary", use_container_width=True):
+        if not file_id or not drive_caption:
+            st.warning("Please provide both a Drive link and a caption.")
+        else:
+            with st.spinner("Pulling from Drive and pushing directly to Meta..."):
+                try:
+                    # Hits your immediate publishing endpoint
+                    response = requests.post(
+                        "http://brain:8000/api/publish-from-drive", 
+                        json={
+                            "drive_file_id": file_id,
+                            "caption": drive_caption
+                        }
+                    )
                     
-            except Exception as e:
-                st.error(f"🚨 Connection error: {e}")
+                    if response.status_code == 200:
+                        st.success("🎉 Post published successfully!")
+                        st.balloons()
+                    else:
+                        st.error(f"Failed to publish: {response.text}")
+                        
+                except Exception as e:
+                    st.error(f"🚨 Connection error: {e}")
+
+# --- TAB 2: Schedule (Queue) ---
+with tab2:
+    st.caption("Send this to the database. The background worker will publish it at the requested time.")
+    col1, col2 = st.columns(2)
+    with col1:
+        target_date = st.date_input("Select Date")
+    with col2:
+        target_time = st.time_input("Select Time")
+
+    if st.button("⏰ Add to Queue", type="primary", use_container_width=True):
+        if not file_id or not drive_caption:
+            st.warning("Please provide both a Drive link and a caption.")
+        else:
+            scheduled_datetime = datetime.datetime.combine(target_date, target_time)
+
+            with st.spinner("Locking post into the database queue..."):
+                try:
+                    # Hits your queue endpoint
+                    response = requests.post(
+                        "http://brain:8000/api/queue-post", 
+                        json={
+                            "source_type": "drive",
+                            "file_id_or_url": file_id,
+                            "caption": drive_caption,
+                            "scheduled_time": scheduled_datetime.isoformat() 
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        st.success(f"🎉 {data['message']}")
+                        st.info(f"Worker will publish this on {scheduled_datetime.strftime('%b %d at %I:%M %p')}.")
+                    else:
+                        st.error(f"Failed to queue: {response.text}")
+                        
+                except Exception as e:
+                    st.error(f"🚨 Connection error: {e}")
 
 st.divider()
 st.subheader("📊 Background Queue Dashboard")
@@ -168,7 +203,7 @@ with col2:
         st.rerun()
 
 try:
-    response = requests.get("http://brain:8000/api/queue-status")
+    response = requests.get(QUEUE_STATUS_URL)
     if response.status_code == 200:
         queue_data = response.json().get("queue", [])
         
@@ -192,7 +227,7 @@ try:
                     # Add a cancel button for pending posts
                     if post['status'] == 'pending':
                         if st.button(f"❌ Cancel Post #{post['id']}", key=f"cancel_{post['id']}"):
-                            del_res = requests.delete(f"http://brain:8000/api/queue/{post['id']}")
+                            del_res = requests.delete(f"{DELETE_QUEUE_URL}/{post['id']}")
                             if del_res.status_code == 200:
                                 st.success("Post removed from queue!")
                                 st.rerun()

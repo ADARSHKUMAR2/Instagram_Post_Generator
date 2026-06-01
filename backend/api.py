@@ -6,7 +6,7 @@ import urllib.parse
 from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 from shared.config import Config
-from agent.schemas import PostRequest, PostResponse, InstaPost, PublishRequest
+from agent.schemas import PostRequest, PostResponse, InstaPost, PublishRequest, SearchQuery
 from agent.agent_handler import generate_instagram_post
 from datetime import datetime
 import sqlite3
@@ -15,6 +15,7 @@ from infrastructure.services.scheduler import start_scheduler
 from infrastructure.services.aws_s3 import StorageHandoffManager
 from infrastructure.services.google_drive import GoogleDriveManager
 from infrastructure.services.discord_notifier import DiscordManager
+from infrastructure.services.vector_manager import VectorManager
 
 app = FastAPI(
     title="InstaAgent Backend",
@@ -28,6 +29,7 @@ storage_manager = StorageHandoffManager()
 drive_manager = GoogleDriveManager()
 discord_manager = DiscordManager()
 db_manager = DatabaseManager()
+vector_manager = VectorManager()
 
 class DrivePublishRequest(BaseModel):
     drive_file_id: str
@@ -227,6 +229,23 @@ async def publish_from_drive(payload: DrivePublishRequest):
         if os.path.exists(local_path):
             os.remove(local_path)
 
+@router.post("/api/search-drive")
+async def search_drive_images(search_data: SearchQuery):
+    """
+    Takes a plain-text prompt, converts it to an embedding,
+    and returns matching Google Drive file IDs.
+    """
+    if not search_data.query.strip():
+        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+        
+    print(f"🔍 Executing semantic image search for: '{search_data.query}'")
+    matching_ids = vector_manager.search(search_data.query, top_k=search_data.top_k)
+    
+    return {
+        "query": search_data.query,
+        "results": matching_ids  # List of Google Drive file IDs
+    }
+    
 # Register all routes directly onto the main application instance
 app.include_router(router)
 

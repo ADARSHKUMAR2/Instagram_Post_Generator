@@ -3,7 +3,7 @@ import os
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,3 +38,19 @@ class GoogleDriveManager:
         except Exception as e:
             logger.error(f"❌ Google Drive down-stream broke: {e}")
             raise e
+
+    def upload_image(self, local_file_path: str, drive_folder_id: str) -> str:
+        """Uploads a local image to a specific Google Drive folder."""
+        file_metadata = {
+            'name': os.path.basename(local_file_path),
+            'parents': [drive_folder_id]
+        }
+        media = MediaFileUpload(local_file_path, mimetype='image/jpeg', resumable=True)
+        
+        uploaded_file = self.service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id'
+        ).execute()
+        
+        return uploaded_file.get('id')

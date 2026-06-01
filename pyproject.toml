@@ -1,15 +1,31 @@
 [project]
 name = "insta-posts"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Autonomous Social Media Publisher"
 requires-python = ">=3.12"
 dependencies = [
-    "apscheduler>=3.11.2",
-    "boto3>=1.43.18",
-    "fastapi>=0.136.3",
-    "google-api-python-client>=2.197.0",
-    "google-auth>=2.53.0",
     "openai-agents>=0.17.4",
-    "streamlit>=1.58.0",
+]  # Keep global dependencies empty or add shared utilities
+
+[dependency-groups]
+backend = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "pydantic>=2.6.0",
+    "requests>=2.31.0",
+    "chromadb==0.4.24",
+    "sentence-transformers==2.6.1",
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+    "Pillow==10.3.0",
+    "kagglehub",
+    "mcp",
+    "google-api-python-client", 
+    "google-auth-httplib2",
+    "apscheduler",
+    "boto3"
+]
+frontend = [
+    "streamlit==1.32.0",
+    "requests==2.31.0"
 ]

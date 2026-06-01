@@ -18,3 +18,7 @@ class PostResponse(BaseModel):
 class PublishRequest(BaseModel):
     image_url: str
     caption: str
+
+class SearchQuery(BaseModel):
+    query: str
+    top_k: int = 3

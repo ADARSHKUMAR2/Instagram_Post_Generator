@@ -1,7 +1,7 @@
 services:
   # 1. The Main Brain API
   brain:
-    build:
+    build: 
       context: ../
       dockerfile: infrastructure/Dockerfile.backend
     ports:
@@ -27,6 +27,8 @@ services:
       - "8001:8001"
     volumes:
       - ../:/app
+    env_file:                     
+      - ../shared/.env            
     command: uv run python mcp_servers/weather_mcp/weather_server.py
 
   # 3. The News Server
@@ -38,6 +40,8 @@ services:
       - "8002:8002"
     volumes:
       - ../:/app
+    env_file:                     
+      - ../shared/.env  
     command: uv run python mcp_servers/news_mcp/news_server.py
 
   frontend:
